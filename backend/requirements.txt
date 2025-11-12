@@ -11,3 +11,6 @@ sqlalchemy
 psycopg2-binary
 sentencepiece
 aiohttp
+PyPDF2
+python-docx
+redis
