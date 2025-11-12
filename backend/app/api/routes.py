@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Query
 from pydantic import BaseModel, HttpUrl
 from app.services.summarization import summarization_service
 from app.models.database import Summary
@@ -106,3 +106,59 @@ async def summarize_file(
     result["summary_id"] = new_summary.id
     result["filename"] = file.filename
     return result
+
+@router.get("/summaries/{user_id}")
+async def get_user_summaries(
+    user_id: str,
+    skip: int = 0,
+    limit: int = 20,
+    db: Session = Depends(get_db)
+):
+    """Fetch all summaries for a given user"""
+    summaries = (
+        db.query(Summary)
+        .filter(Summary.user_id == user_id)
+        .order_by(Summary.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "user_id": user_id,
+        "count": len(summaries),
+        "summaries": [
+            {
+                "id": s.id,
+                "source_type": s.source_type,
+                "source_url": s.source_url,
+                "bart_summary": s.bart_summary,
+                "pegasus_summary": s.pegasus_summary,
+                "selected_summary": s.selected_summary,
+                "user_rating": s.user_rating,
+                "feedback_text": s.feedback_text,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            }
+            for s in summaries
+        ],
+    }
+
+@router.post("/summaries/{summary_id}/feedback")
+async def submit_feedback(
+    summary_id: str,
+    selected_model: str = Query(..., regex="^(bart|pegasus)$"),
+    rating: int | None = Query(None, ge=1, le=5),
+    feedback_text: str | None = None,
+    db: Session = Depends(get_db)
+):
+    """Save user feedback and model preference"""
+    summary = db.query(Summary).filter(Summary.id == summary_id).first()
+    if not summary:
+        raise HTTPException(status_code=404, detail="Summary not found")
+
+    summary.selected_summary = selected_model
+    summary.user_rating = rating
+    summary.feedback_text = feedback_text
+    db.commit()
+
+    return {"message": "Feedback saved successfully"}
