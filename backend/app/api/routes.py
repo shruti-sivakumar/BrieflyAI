@@ -88,17 +88,40 @@ async def summarize_file(
         raise HTTPException(status_code=400, detail="Unsupported file type")
 
     file_bytes = await file.read()
-    result = await summarization_service.summarize_file(file_bytes, file.content_type)
 
+    # --- Extract text based on file type ---
+    if file.content_type == "text/plain":
+        extracted_text = file_bytes.decode("utf-8", errors="ignore")
+
+    elif file.content_type == "application/pdf":
+        extracted = await summarization_service.extractor.extract_from_pdf(file_bytes)
+        extracted_text = extracted["text"]
+
+    elif file.content_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        extracted = await summarization_service.extractor.extract_from_docx(file_bytes)
+        extracted_text = extracted["text"]
+
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+
+    if not extracted_text.strip():
+        raise HTTPException(status_code=400, detail="Could not extract readable text from file")
+
+    # --- Summarize extracted text ---
+    result = await summarization_service.summarize_text(extracted_text)
+
+    # --- Save to database (store ORIGINAL EXTRACTED TEXT) ---
     new_summary = Summary(
         id=str(uuid.uuid4()),
         user_id=user_id,
         source_type="file",
-        original_text=f"File: {file.filename}",
+        source_url=None,
+        original_text=extracted_text[:5000],   # store first 5k chars to avoid DB overload
         original_length=result["original_length"],
         bart_summary=result["bart"]["summary"],
         pegasus_summary=result["pegasus"]["summary"]
     )
+
     db.add(new_summary)
     db.commit()
     db.refresh(new_summary)
