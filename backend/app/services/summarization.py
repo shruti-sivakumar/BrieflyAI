@@ -15,6 +15,10 @@ class SummarizationService:
     def _hash_text(self, text: str) -> str:
         return hashlib.sha256(text.encode()).hexdigest()
 
+    async def _run_model(self, model, text: str):
+        """Runs a HF summarize() inside a safe background thread."""
+        return await asyncio.to_thread(model.summarize, text)
+
     # -----------------------------
     # TEXT SUMMARIZATION
     # -----------------------------
@@ -27,10 +31,9 @@ class SummarizationService:
             print("Cache hit!")
             return cached
 
-        # Run both models in parallel
-        bart_task = asyncio.to_thread(self.bart.summarize, text)
-        pegasus_task = asyncio.to_thread(self.pegasus.summarize, text)
-        bart_result, pegasus_result = await asyncio.gather(bart_task, pegasus_task)
+        # ❗ FIXED: RUN MODELS SEQUENTIALLY, NOT IN PARALLEL
+        bart_result = await self._run_model(self.bart, text)
+        pegasus_result = await self._run_model(self.pegasus, text)
 
         result = {
             "original_length": len(text.split()),
@@ -40,7 +43,6 @@ class SummarizationService:
 
         await self.cache.set(cache_key, result, expire=86400)
         print("Cache stored.")
-
         return result
 
     # -----------------------------
@@ -53,7 +55,6 @@ class SummarizationService:
         if not text or len(text.split()) < 50:
             raise ValueError("Could not extract enough text from URL.")
 
-        # Reuse summarize_text()
         result = await self.summarize_text(text)
         result["extracted_title"] = extracted.get("title")
         result["original_length"] = extracted.get("word_count", len(text.split()))
@@ -77,15 +78,13 @@ class SummarizationService:
         else:
             raise ValueError(f"Unsupported file type: {mime}")
 
-        if not text or len(text.strip()) == 0:
+        if not text.strip():
             raise ValueError("Could not extract text from file")
 
         if len(text.split()) < 20:
             raise ValueError("File does not contain enough text to summarize")
 
-        # Reuse summarize_text()
         result = await self.summarize_text(text)
-
         result["original_length"] = len(text.split())
         return result
 
