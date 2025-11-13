@@ -33,7 +33,7 @@ export interface UserSummariesResponse {
   summaries: any[];
 }
 
-/* ===== API calls (FIXED: include user_id) ===== */
+/* ===== API calls (WITH user_id FIXED) ===== */
 export const summarizeText = async (text: string): Promise<SummaryResult> => {
   const headers = await authHeader();
   const userId = useStore.getState().userId;
