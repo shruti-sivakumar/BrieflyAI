@@ -1,7 +1,0 @@
-flask
-requests
-beautifulsoup4
-nltk
-transformers
-scikit-learn
-networkx
